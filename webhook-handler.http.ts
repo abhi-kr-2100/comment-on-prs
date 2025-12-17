@@ -435,37 +435,37 @@ function validateWebhookPayload(payload: any): asserts payload is WebhookPayload
   }
 
   // Validate pull_request structure
-  if (!payload.pull_request.user || typeof payload.pull_request.user !== 'object') {
+  if (!payload.sender || typeof payload.sender !== 'object') {
     throw new WebhookError(
-      'Pull request user data is missing from payload',
+      'Sender data is missing from payload',
       400,
-      'MISSING_USER_DATA'
+      'MISSING_SENDER_DATA'
     );
   }
 
-  // Validate user structure
-  const user = payload.pull_request.user;
-  if (!user.login || typeof user.login !== 'string') {
+  // Validate sender structure
+  const sender = payload.sender;
+  if (!sender.login || typeof sender.login !== 'string') {
     throw new WebhookError(
-      'Pull request user missing required field: login',
+      'Sender missing required field: login',
       400,
-      'MISSING_USER_LOGIN'
+      'MISSING_SENDER_LOGIN'
     );
   }
 
-  if (!user.type || typeof user.type !== 'string') {
+  if (!sender.type || typeof sender.type !== 'string') {
     throw new WebhookError(
-      'Pull request user missing required field: type',
+      'Sender missing required field: type',
       400,
-      'MISSING_USER_TYPE'
+      'MISSING_SENDER_TYPE'
     );
   }
 
-  if (typeof user.id !== 'number') {
+  if (typeof sender.id !== 'number') {
     throw new WebhookError(
-      'Pull request user missing required field: id',
+      'Sender missing required field: id',
       400,
-      'MISSING_USER_ID'
+      'MISSING_SENDER_ID'
     );
   }
 
@@ -550,20 +550,25 @@ export default async function(req: Request): Promise<Response> {
       throw validationError;
     }
 
-    // Filter for "opened" action only (Requirement 1.2)
-    if (payload.action !== 'opened') {
-      return createSuccessResponse(`Ignoring action: ${payload.action}. Only 'opened' events are processed.`);
-    }
-
     // Initialize bot detector
     const botDetector = new BotDetector();
     
-    // Check if PR opener is a bot (Requirement 1.3)
-    const isBot = botDetector.isBot(payload.pull_request.user);
+    // Check if the actor making the change is a bot (Requirement 1.3)
+    const isBot = botDetector.isBot(payload.sender);
     
     // If not a bot, skip processing (Requirement 2.4)
     if (!isBot) {
-      return createSuccessResponse(`PR opened by human user ${payload.pull_request.user.login}. No action taken.`);
+      return createSuccessResponse(`Action performed by human user ${payload.sender.login}. No action taken.`);
+    }
+
+    // Define allowed actions to prevent cascading webhook triggers (prevent infinite loops)
+    const ALLOWED_ACTIONS = ['opened', 'synchronize', 'edited', 'reopened'];
+    
+    // Only process if the action is in the allow-list
+    if (!ALLOWED_ACTIONS.includes(payload.action)) {
+      return createSuccessResponse(
+        `Bot action '${payload.action}' is not in the allow-list. No review comment posted.`
+      );
     }
 
     // Initialize GitHub API client and comment service with error handling (Requirement 4.2)
