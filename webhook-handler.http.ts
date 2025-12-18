@@ -1,6 +1,6 @@
 /**
- * PR Bot Reviewer - GitHub Webhook Handler
- * Automatically triggers AI code reviews when bots open pull requests
+ * PR Reviewer - GitHub Webhook Handler
+ * Automatically triggers AI code reviews when pull requests are opened
  * 
  * Required Environment Variables:
  * - GITHUB_TOKEN: Personal Access Token for GitHub API authentication
@@ -11,7 +11,7 @@
  * 2. Configure webhook to send 'pull_request' events
  * 3. Ensure GITHUB_TOKEN environment variable is set
  * 
- * When a bot opens a pull request, this handler will automatically post
+ * When a pull request is opened, this handler will automatically post
  * a comment to trigger multiple AI code review services.
  */
 
@@ -35,25 +35,15 @@ export interface WebhookPayload {
   action: string;
   number: number;
   pull_request: {
-    id: number;
-    state: string;
-    title: string;
     user: GitHubUser;
   };
   repository: {
-    id: number;
-    name: string;
     full_name: string;
   };
   sender: GitHubUser;
 }
 
-/**
- * Review comment structure
- */
-export interface ReviewComment {
-  body: string;
-}
+
 
 /**
  * Error response structure
@@ -68,12 +58,7 @@ export interface ErrorResponse {
 // Core Interfaces
 // ============================================================================
 
-/**
- * Main webhook handler interface
- */
-export interface WebhookHandler {
-  handleRequest(request: Request): Promise<Response>;
-}
+
 
 /**
  * Bot detection service interface
@@ -435,11 +420,20 @@ function validateWebhookPayload(payload: any): asserts payload is WebhookPayload
   }
 
   // Validate pull_request structure
-  if (!payload.sender || typeof payload.sender !== 'object') {
+  if (!payload.pull_request || typeof payload.pull_request !== 'object') {
     throw new WebhookError(
-      'Sender data is missing from payload',
+      'Webhook payload missing required field: pull_request',
       400,
-      'MISSING_SENDER_DATA'
+      'MISSING_PULL_REQUEST'
+    );
+  }
+
+  // Validate pull_request.user structure
+  if (!payload.pull_request.user || typeof payload.pull_request.user !== 'object') {
+    throw new WebhookError(
+      'Pull request missing required field: user',
+      400,
+      'MISSING_PULL_REQUEST_USER'
     );
   }
 
@@ -481,7 +475,7 @@ function validateWebhookPayload(payload: any): asserts payload is WebhookPayload
 
 /**
  * Main webhook handler function - Val Town HTTP trigger entry point
- * Processes GitHub webhook events and triggers AI code reviews for bot PRs
+ * Processes GitHub webhook events and triggers AI code reviews for PRs
  */
 export default async function(req: Request): Promise<Response> {
   try {
@@ -550,24 +544,13 @@ export default async function(req: Request): Promise<Response> {
       throw validationError;
     }
 
-    // Initialize bot detector
-    const botDetector = new BotDetector();
-    
-    // Check if the actor making the change is a bot (Requirement 1.3)
-    const isBot = botDetector.isBot(payload.sender);
-    
-    // If not a bot, skip processing (Requirement 2.4)
-    if (!isBot) {
-      return createSuccessResponse(`Action performed by human user ${payload.sender.login}. No action taken.`);
-    }
-
     // Define allowed actions to prevent cascading webhook triggers (prevent infinite loops)
-    const ALLOWED_ACTIONS = ['opened', 'synchronize', 'edited', 'reopened'];
+    const ALLOWED_ACTIONS = ['opened', 'synchronize'];
     
     // Only process if the action is in the allow-list
     if (!ALLOWED_ACTIONS.includes(payload.action)) {
       return createSuccessResponse(
-        `Bot action '${payload.action}' is not in the allow-list. No review comment posted.`
+        `Action '${payload.action}' is not in the allow-list. No review comment posted.`
       );
     }
 
@@ -587,7 +570,7 @@ export default async function(req: Request): Promise<Response> {
       throw configError;
     }
 
-    // Post review comment for bot-opened PR (Requirement 1.4)
+    // Post review comment for PR (Requirement 1.4)
     try {
       await commentService.postReviewComment(
         payload.repository.full_name,
@@ -606,7 +589,7 @@ export default async function(req: Request): Promise<Response> {
 
     // Return success response (Requirement 1.5, 5.3)
     return createSuccessResponse(
-      `Review comment posted successfully for bot PR #${payload.number} by ${payload.pull_request.user.login}`
+      `Review comment posted successfully for PR #${payload.number} by ${payload.pull_request.user.login}`
     );
 
   } catch (error) {
