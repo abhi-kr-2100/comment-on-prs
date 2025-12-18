@@ -428,17 +428,16 @@ function validateWebhookPayload(payload: any): asserts payload is WebhookPayload
     );
   }
 
-  // Validate pull_request.user structure
-  if (!payload.pull_request.user || typeof payload.pull_request.user !== 'object') {
+  // Validate sender structure (using sender instead of pull_request.user as per requirements)
+  const sender = payload.sender;
+  if (!sender || typeof sender !== 'object') {
     throw new WebhookError(
-      'Pull request missing required field: user',
+      'Webhook payload missing required field: sender',
       400,
-      'MISSING_PULL_REQUEST_USER'
+      'MISSING_SENDER'
     );
   }
 
-  // Validate sender structure
-  const sender = payload.sender;
   if (!sender.login || typeof sender.login !== 'string') {
     throw new WebhookError(
       'Sender missing required field: login',
@@ -589,7 +588,7 @@ export default async function(req: Request): Promise<Response> {
 
     // Return success response (Requirement 1.5, 5.3)
     return createSuccessResponse(
-      `Review comment posted successfully for PR #${payload.number} by ${payload.pull_request.user.login}`
+      `Review comment posted successfully for PR #${payload.number} by ${payload.sender.login}`
     );
 
   } catch (error) {
